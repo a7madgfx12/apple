@@ -19,6 +19,13 @@ final class AppState: NSObject, ObservableObject {
     @Published var activeAlarm: ActivePrayerAlarm?
     @Published var route: Route = .home
 
+    /// Alarms already verified-complete today, so the 1-second watcher doesn't immediately
+    /// re-trigger the very same prayer the instant `activeAlarm` is cleared (it would
+    /// otherwise still see "now is within the alarm's 10-minute window" and fire again).
+    /// Keyed by prayer + alarm timestamp, so it naturally stops matching once tomorrow's
+    /// schedule produces a new alarm time for that prayer.
+    private var completedAlarmIdentifiers: Set<String> = []
+
     enum Route: Hashable { case home, azkar, settings }
 
     override init() {
@@ -57,11 +64,16 @@ final class AppState: NSObject, ObservableObject {
         guard activeAlarm == nil, let schedule = scheduleService.todaySchedule else { return }
         let now = Date()
         for entry in schedule.entries where settings.isPrayerEnabled(entry.prayer) {
+            guard !completedAlarmIdentifiers.contains(identifier(for: entry)) else { continue }
             if now >= entry.alarmTime && now < entry.alarmTime.addingTimeInterval(600) {
                 trigger(entry: entry)
                 break
             }
         }
+    }
+
+    private func identifier(for entry: PrayerTimeEntry) -> String {
+        "\(entry.prayer.rawValue)-\(Int(entry.alarmTime.timeIntervalSince1970))"
     }
 
     private func trigger(entry: PrayerTimeEntry) {
@@ -75,6 +87,9 @@ final class AppState: NSObject, ObservableObject {
 
     /// Called only after successful on-device prayer-mat verification.
     func markPrayerCompleted() {
+        if let alarm = activeAlarm, let schedule = scheduleService.todaySchedule, let entry = schedule.entry(for: alarm.prayer) {
+            completedAlarmIdentifiers.insert(identifier(for: entry))
+        }
         audioManager.stopAfterVerification()
         activeAlarm = nil
     }
@@ -110,6 +125,7 @@ extension AppState: @preconcurrency UNUserNotificationCenterDelegate {
         guard response.notification.request.content.userInfo["kind"] as? String == "alarm" else { return }
         guard let schedule = scheduleService.todaySchedule, let entry = schedule.entry(for: prayer) else { return }
         guard Date() >= entry.alarmTime else { return }
+        guard !completedAlarmIdentifiers.contains(identifier(for: entry)) else { return }
         if activeAlarm == nil {
             trigger(entry: entry)
         }
