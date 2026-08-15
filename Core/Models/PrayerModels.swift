@@ -23,8 +23,8 @@ struct PrayerTimeEntry: Identifiable, Codable {
     let prayer: Prayer
     let time: Date
 
-    /// AlarmTime = CalculatedPrayerTime + 120 seconds. Applied independently per prayer.
-    var alarmTime: Date { time.addingTimeInterval(120) }
+    /// AlarmTime = CalculatedPrayerTime + 15 minutes. Applied independently per prayer.
+    var alarmTime: Date { time.addingTimeInterval(15 * 60) }
 }
 
 /// A full day's schedule for a given location/date.

@@ -3,8 +3,8 @@ import XCTest
 
 final class PrayerTimeCalculatorTests: XCTestCase {
 
-    /// The mandatory +2 minute alarm offset must apply independently to every prayer.
-    func testAlarmIsAlwaysPrayerTimePlusTwoMinutes() {
+    /// The mandatory +15 minute alarm offset must apply independently to every prayer.
+    func testAlarmIsAlwaysPrayerTimePlusFifteenMinutes() {
         let schedule = PrayerTimeCalculator.schedule(
             for: Date(),
             latitude: 21.3891, longitude: 39.8579, // Mecca
@@ -13,7 +13,7 @@ final class PrayerTimeCalculatorTests: XCTestCase {
             asrMethod: .standard
         )
         for entry in schedule.entries {
-            XCTAssertEqual(entry.alarmTime.timeIntervalSince(entry.time), 120, accuracy: 0.001, "\(entry.prayer.rawValue) alarm must be exactly +120s")
+            XCTAssertEqual(entry.alarmTime.timeIntervalSince(entry.time), 15 * 60, accuracy: 0.001, "\(entry.prayer.rawValue) alarm must be exactly +15min")
         }
     }
 

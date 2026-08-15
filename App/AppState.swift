@@ -90,7 +90,12 @@ extension AppState: @preconcurrency UNUserNotificationCenterDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         guard let raw = response.notification.request.content.userInfo["prayer"] as? String, let prayer = Prayer(rawValue: raw) else { return }
+        // The "wudu" heads-up (fired at raw prayer time) is informational only — it must never
+        // itself start the audio alarm. Only the "alarm" notification (fired at time + 15 min)
+        // does, and only once that alarm time has actually arrived.
+        guard response.notification.request.content.userInfo["kind"] as? String == "alarm" else { return }
         guard let schedule = scheduleService.todaySchedule, let entry = schedule.entry(for: prayer) else { return }
+        guard Date() >= entry.alarmTime else { return }
         if activeAlarm == nil {
             trigger(entry: entry)
         }
