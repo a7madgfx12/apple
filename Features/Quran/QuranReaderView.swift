@@ -64,7 +64,18 @@ struct QuranReaderView: View {
     }
 
     private var readingText: String {
-        viewModel.ayahs.map { "\($0.text) ﴿\($0.ayahNumber)﴾" }.joined(separator: " ")
+        // Ayah numbers are rendered with Arabic-Indic digits (٠-٩) instead of Western digits —
+        // Western digits mixed into an RTL Arabic paragraph are a well-known source of the
+        // Unicode bidi algorithm reordering surrounding characters unpredictably.
+        viewModel.ayahs.map { "\($0.text) ﴿\(arabicIndicDigits($0.ayahNumber))﴾" }.joined(separator: " ")
+    }
+
+    private func arabicIndicDigits(_ number: Int) -> String {
+        let digits = ["٠", "١", "٢", "٣", "٤", "٥", "٦", "٧", "٨", "٩"]
+        return String(number).compactMap { char -> String? in
+            guard let d = char.wholeNumberValue else { return nil }
+            return digits[d]
+        }.joined()
     }
 
     private var title: String {

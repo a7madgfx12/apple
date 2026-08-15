@@ -39,8 +39,15 @@ final class QuranService {
 
     private(set) var surahIndex: [SurahInfo] = []
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    init(session: URLSession? = nil) {
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 15
+            config.timeoutIntervalForResource = 20
+            self.session = URLSession(configuration: config)
+        }
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         self.cacheDirectory = appSupport.appendingPathComponent("Quran", isDirectory: true)
         try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
@@ -65,8 +72,9 @@ final class QuranService {
         if let cached = try? Data(contentsOf: cacheFile), let ayahs = try? JSONDecoder().decode([Ayah].self, from: cached), !ayahs.isEmpty {
             return ayahs
         }
-        let ayahs = try await fetchSurahFromSource(surahNumber)
-        guard !ayahs.isEmpty else { throw QuranError.networkUnavailableAndNotCached }
+        guard let ayahs = try? await fetchSurahFromSource(surahNumber), !ayahs.isEmpty else {
+            throw QuranError.networkUnavailableAndNotCached
+        }
         if let encoded = try? JSONEncoder().encode(ayahs) {
             try? encoded.write(to: cacheFile)
         }
@@ -74,11 +82,26 @@ final class QuranService {
     }
 
     /// surahquran.com has no per-Mushaf-page endpoint, so this resolves the page to its
-    /// containing Surah (via `startPage`) and returns that Surah's real fetched text —
+    /// containing Surah (via `startPage`) and returns only the slice of that Surah's ayahs
+    /// estimated to fall on this specific page — distributing the Surah's ayahs evenly
+    /// across the number of pages it spans. This is an approximation (not the exact printed
+    /// line breaks of a real Mushaf, which the approved source cannot provide), but it gives
+    /// genuinely different content per page number instead of repeating the whole Surah —
     /// see type-level documentation.
     func ayahs(forPage pageNumber: Int) async throws -> [Ayah] {
         guard let surah = surahForPage(pageNumber) else { throw QuranError.pageOutOfRange }
-        return try await ayahs(forSurah: surah.number)
+        let allAyahs = try await ayahs(forSurah: surah.number)
+
+        let sorted = surahIndex.sorted { $0.startPage < $1.startPage }
+        let nextStartPage = sorted.first { $0.startPage > surah.startPage }?.startPage ?? (surah.startPage + 1)
+        let pageCount = max(1, nextStartPage - surah.startPage)
+        let pageOffset = max(0, min(pageCount - 1, pageNumber - surah.startPage))
+
+        let ayahsPerPage = max(1, Int((Double(allAyahs.count) / Double(pageCount)).rounded(.up)))
+        let startIndex = pageOffset * ayahsPerPage
+        guard startIndex < allAyahs.count else { return allAyahs }
+        let endIndex = min(allAyahs.count, startIndex + ayahsPerPage)
+        return Array(allAyahs[startIndex..<endIndex])
     }
 
     /// Returns the Surah whose printed range contains `pageNumber`, using each Surah's
