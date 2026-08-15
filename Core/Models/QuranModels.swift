@@ -1,12 +1,18 @@
 import Foundation
 
 /// Metadata for one of the 114 Surahs. Bundled locally (Resources/Quran/surah_index.json).
+///
+/// `startPage` is the Surah's first page in the standard 604-page Uthmani Mushaf
+/// (King Fahd Complex layout) — used only to map a Mushaf page number to its containing
+/// Surah for the Page Index feature (see `QuranService.ayahs(forPage:)`), since the
+/// approved content source (surahquran.com) exposes Surah text but no per-page endpoint.
 struct SurahInfo: Codable, Identifiable, Hashable {
     let number: Int
     let name: String
     let englishName: String
     let ayahCount: Int
     let revelation: String
+    let startPage: Int
 
     var id: Int { number }
 }

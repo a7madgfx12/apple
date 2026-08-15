@@ -34,12 +34,19 @@ struct QuranReaderView: View {
                 }.padding()
             } else {
                 ScrollView {
-                    Text(readingText)
-                        .font(.system(size: 24, weight: .regular))
-                        .lineSpacing(14)
-                        .multilineTextAlignment(.center)
-                        .foregroundStyle(.white)
-                        .padding(24)
+                    VStack(spacing: 12) {
+                        if case .page = mode, let surah = appState.quranService.surahForPage(currentIndex) {
+                            Text("ضمن سورة \(surah.name)")
+                                .font(.caption)
+                                .foregroundStyle(AppTheme.secondaryText)
+                        }
+                        Text(readingText)
+                            .font(.system(size: 24, weight: .regular))
+                            .lineSpacing(14)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.white)
+                    }
+                    .padding(24)
                 }
                 .gesture(
                     DragGesture(minimumDistance: 40)
@@ -63,7 +70,7 @@ struct QuranReaderView: View {
     private var title: String {
         switch mode {
         case .surah: return appState.quranService.surah(number: currentIndex)?.name ?? "سورة"
-        case .page: return "صفحة \(currentIndex)"
+        case .page: return "صفحة \(currentIndex) — \(appState.quranService.surahForPage(currentIndex)?.name ?? "")"
         }
     }
 

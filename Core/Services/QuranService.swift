@@ -3,13 +3,13 @@ import Foundation
 enum QuranError: LocalizedError {
     case indexUnavailable
     case networkUnavailableAndNotCached
-    case pagesNotSupportedBySource
+    case pageOutOfRange
 
     var errorDescription: String? {
         switch self {
         case .indexUnavailable: return "تعذر تحميل فهرس السور."
         case .networkUnavailableAndNotCached: return "هذه السورة غير متاحة بدون اتصال بالإنترنت بعد. يرجى الاتصال بالإنترنت مرة واحدة لتنزيلها."
-        case .pagesNotSupportedBySource: return "قراءة صفحات المصحف الفردية غير متاحة حاليًا من مصدر المحتوى المعتمد. يرجى استخدام فهرس السور بدلًا من ذلك."
+        case .pageOutOfRange: return "رقم الصفحة غير صحيح."
         }
     }
 }
@@ -26,8 +26,12 @@ enum QuranError: LocalizedError {
 ///
 /// Known source limitation: surahquran.com does not expose a per-Mushaf-page reading
 /// endpoint (its `/page/N.html` URLs are tafsir pages indexed by *surah* number, not
-/// Mushaf page). The Page Index screen therefore surfaces `QuranError.pagesNotSupportedBySource`
-/// rather than silently showing an empty page — see README for this documented limitation.
+/// Mushaf page). To keep the Page Index feature usable, `ayahs(forPage:)` maps the
+/// requested Mushaf page number to its containing Surah — using each Surah's standard
+/// starting page in the 604-page Uthmani Mushaf (King Fahd Complex layout), bundled as
+/// `startPage` in `surah_index.json` — and returns that Surah's full (accurately fetched)
+/// text. This shows the correct real content for that area of the Mushaf; it is not a
+/// pixel-exact single printed page, which the approved source cannot provide — see README.
 final class QuranService {
     private let session: URLSession
     private let cacheDirectory: URL
@@ -69,9 +73,24 @@ final class QuranService {
         return ayahs
     }
 
-    /// surahquran.com has no per-Mushaf-page endpoint — see type-level documentation.
+    /// surahquran.com has no per-Mushaf-page endpoint, so this resolves the page to its
+    /// containing Surah (via `startPage`) and returns that Surah's real fetched text —
+    /// see type-level documentation.
     func ayahs(forPage pageNumber: Int) async throws -> [Ayah] {
-        throw QuranError.pagesNotSupportedBySource
+        guard let surah = surahForPage(pageNumber) else { throw QuranError.pageOutOfRange }
+        return try await ayahs(forSurah: surah.number)
+    }
+
+    /// Returns the Surah whose printed range contains `pageNumber`, using each Surah's
+    /// `startPage` (sorted ascending — the next Surah's startPage is this Surah's end).
+    func surahForPage(_ pageNumber: Int) -> SurahInfo? {
+        let sorted = surahIndex.sorted { $0.startPage < $1.startPage }
+        guard !sorted.isEmpty, pageNumber >= 1 else { return nil }
+        var result: SurahInfo?
+        for surah in sorted where surah.startPage <= pageNumber {
+            result = surah
+        }
+        return result ?? sorted.first
     }
 
     // MARK: - Source fetching (surahquran.com)
