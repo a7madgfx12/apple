@@ -25,6 +25,8 @@ final class SettingsStore: ObservableObject {
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
         static let lastQuranPage = "settings.lastQuranPage"
         static let lastQuranSurah = "settings.lastQuranSurah"
+        static let useManualLocation = "settings.useManualLocation"
+        static let manualLocationName = "settings.manualLocationName"
     }
 
     @Published var enabledPrayers: Set<Prayer> {
@@ -63,6 +65,19 @@ final class SettingsStore: ObservableObject {
     @Published var lastQuranSurah: Int {
         didSet { defaults.set(lastQuranSurah, forKey: Keys.lastQuranSurah) }
     }
+    /// When true, prayer times use `manualLocation` instead of GPS.
+    @Published var useManualLocation: Bool {
+        didSet { defaults.set(useManualLocation, forKey: Keys.useManualLocation) }
+    }
+    /// Name of the selected preset from `ManualLocation.presets` (nil = none picked yet).
+    @Published var manualLocationName: String? {
+        didSet { defaults.set(manualLocationName, forKey: Keys.manualLocationName) }
+    }
+
+    var manualLocation: ManualLocation? {
+        guard let name = manualLocationName else { return nil }
+        return ManualLocation.presets.first { $0.id == name }
+    }
 
     /// Security-scoped bookmark for the user-picked custom audio file (Files/Documents picker).
     var customAudioBookmark: Data? {
@@ -87,6 +102,8 @@ final class SettingsStore: ObservableObject {
         self.hasCompletedOnboarding = defaults.bool(forKey: Keys.hasCompletedOnboarding)
         self.lastQuranPage = defaults.object(forKey: Keys.lastQuranPage) as? Int ?? 1
         self.lastQuranSurah = defaults.object(forKey: Keys.lastQuranSurah) as? Int ?? 1
+        self.useManualLocation = defaults.bool(forKey: Keys.useManualLocation)
+        self.manualLocationName = defaults.string(forKey: Keys.manualLocationName)
     }
 
     func isPrayerEnabled(_ prayer: Prayer) -> Bool { enabledPrayers.contains(prayer) }

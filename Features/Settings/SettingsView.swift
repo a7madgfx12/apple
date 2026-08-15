@@ -84,19 +84,39 @@ struct SettingsView: View {
                     Text(method.arabicName).tag(method)
                 }
             }
+            Toggle(isOn: $settings.useManualLocation) {
+                Text("تحديد الموقع يدويًا")
+            }
+            .tint(AppTheme.primaryYellow)
+
+            if settings.useManualLocation {
+                Picker("المدينة", selection: Binding(
+                    get: { settings.manualLocationName ?? ManualLocation.presets.first?.id ?? "" },
+                    set: { settings.manualLocationName = $0 }
+                )) {
+                    ForEach(ManualLocation.presets) { location in
+                        Text(location.displayName).tag(location.id)
+                    }
+                }
+            }
+
             HStack {
                 Text("الموقع الحالي")
                 Spacer()
                 Text(settings.placemarkName ?? "غير محدد").foregroundStyle(AppTheme.secondaryText)
             }
-            Button("تحديث الموقع") {
-                Task { await appState.scheduleService.refresh() }
+            if !settings.useManualLocation {
+                Button("تحديث الموقع") {
+                    Task { await appState.scheduleService.refresh() }
+                }
+                .foregroundStyle(AppTheme.primaryYellow)
             }
-            .foregroundStyle(AppTheme.primaryYellow)
         }
         .listRowBackground(AppTheme.secondaryBlack)
         .onChange(of: settings.calculationMethod) { _, _ in Task { await appState.scheduleService.refresh() } }
         .onChange(of: settings.asrMethod) { _, _ in Task { await appState.scheduleService.refresh() } }
+        .onChange(of: settings.useManualLocation) { _, _ in Task { await appState.scheduleService.refresh() } }
+        .onChange(of: settings.manualLocationName) { _, _ in Task { await appState.scheduleService.refresh() } }
     }
 
     private var verificationSection: some View {

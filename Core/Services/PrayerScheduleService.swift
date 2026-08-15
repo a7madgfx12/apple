@@ -22,10 +22,20 @@ final class PrayerScheduleService: ObservableObject {
         scheduleMidnightRefresh()
     }
 
-    /// Full refresh: get current location (or fall back to last-known), recompute, and
-    /// reschedule notifications. Call on launch, on foreground, after settings changes,
-    /// and once a day at midnight.
+    /// Full refresh: get current location (manual override, GPS, or last-known fallback),
+    /// recompute, and reschedule notifications. Call on launch, on foreground, after
+    /// settings changes, and once a day at midnight.
     func refresh() async {
+        if settings.useManualLocation {
+            let manual = settings.manualLocation ?? ManualLocation.presets.first
+            guard let manual else { return }
+            settings.manualLocationName = manual.id
+            recompute(latitude: manual.latitude, longitude: manual.longitude)
+            settings.placemarkName = manual.displayName
+            lastError = nil
+            return
+        }
+
         do {
             let location = try await resolveLocation()
             recompute(latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
