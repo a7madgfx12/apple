@@ -78,6 +78,23 @@ final class AppState: NSObject, ObservableObject {
         audioManager.stopAfterVerification()
         activeAlarm = nil
     }
+
+    /// Manually fires the exact same alarm flow (audio + full-screen alert + camera
+    /// verification) right now, for testing the configured sound and verification flow
+    /// without waiting for an actual prayer time. Uses the next enabled prayer if one
+    /// exists in today's schedule, otherwise a synthetic "الظهر" entry for "right now".
+    func triggerTestAlarm() {
+        guard activeAlarm == nil else { return }
+        let now = Date()
+        let entry: PrayerTimeEntry
+        if let schedule = scheduleService.todaySchedule,
+           let next = schedule.entries.first(where: { settings.isPrayerEnabled($0.prayer) }) {
+            entry = PrayerTimeEntry(prayer: next.prayer, time: now.addingTimeInterval(-15 * 60))
+        } else {
+            entry = PrayerTimeEntry(prayer: .dhuhr, time: now.addingTimeInterval(-15 * 60))
+        }
+        trigger(entry: entry)
+    }
 }
 
 extension AppState: @preconcurrency UNUserNotificationCenterDelegate {

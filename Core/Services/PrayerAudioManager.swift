@@ -30,6 +30,10 @@ final class PrayerAudioManager: NSObject, ObservableObject, AVAudioPlayerDelegat
     private var player: AVAudioPlayer?
     private var securityScopedURL: URL?
     private let settings: SettingsStore
+    private var rampTimer: Timer?
+    private let rampStartVolume: Float = 0.12
+    private let rampStepInterval: TimeInterval = 4.0
+    private let rampSteps = 6
 
     init(settings: SettingsStore) {
         self.settings = settings
@@ -40,9 +44,11 @@ final class PrayerAudioManager: NSObject, ObservableObject, AVAudioPlayerDelegat
     private func configureAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            // .playback category + mixing off allows continued playback with screen locked,
-            // subject to the app having the "Audio, AirPlay, and Picture in Picture"
-            // Background Mode capability enabled (see Info.plist / project capabilities).
+            // The .playback category is what makes this ignore the hardware silent/mute
+            // switch and Do Not Disturb (both only suppress *notification* sounds and
+            // ringtones — not audio explicitly started by an app in the .playback category).
+            // Combined with the "audio" Background Mode, this is the strongest Apple-
+            // compliant way to make sure the Adhan is actually heard.
             try session.setCategory(.playback, mode: .default, options: [])
             try session.setActive(true, options: [])
         } catch {
@@ -60,12 +66,13 @@ final class PrayerAudioManager: NSObject, ObservableObject, AVAudioPlayerDelegat
             let newPlayer = try AVAudioPlayer(contentsOf: url)
             newPlayer.delegate = self
             newPlayer.numberOfLoops = -1
-            newPlayer.volume = settings.volume
+            newPlayer.volume = rampStartVolume
             newPlayer.prepareToPlay()
             guard newPlayer.play() else { throw AudioError.playbackFailed }
             player = newPlayer
             isPlaying = true
             currentAlarm = alarm
+            startVolumeRamp(target: settings.volume)
         } catch let audioError as AudioError {
             throw audioError
         } catch {
@@ -73,9 +80,34 @@ final class PrayerAudioManager: NSObject, ObservableObject, AVAudioPlayerDelegat
         }
     }
 
+    /// Gradually raises volume from a quiet start up to the user's configured level —
+    /// one step every `rampStepInterval` seconds — instead of blasting at full volume
+    /// immediately.
+    private func startVolumeRamp(target: Float) {
+        rampTimer?.invalidate()
+        guard target > rampStartVolume else {
+            player?.volume = target
+            return
+        }
+        let step = (target - rampStartVolume) / Float(rampSteps)
+        var currentStep = 0
+        rampTimer = Timer.scheduledTimer(withTimeInterval: rampStepInterval, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            currentStep += 1
+            let newVolume = self.rampStartVolume + step * Float(currentStep)
+            self.player?.volume = min(target, newVolume)
+            if currentStep >= self.rampSteps {
+                timer.invalidate()
+            }
+        }
+        if let rampTimer { RunLoop.main.add(rampTimer, forMode: .common) }
+    }
+
     /// The only way the alarm audio stops: called after successful on-device
     /// prayer-mat verification. There is intentionally no other public "stop" entry point.
     func stopAfterVerification() {
+        rampTimer?.invalidate()
+        rampTimer = nil
         player?.stop()
         player = nil
         isPlaying = false

@@ -3,11 +3,16 @@ import AVFoundation
 
 struct PrayerMatCameraView: View {
     let alarm: ActivePrayerAlarm
+    /// Called once verification succeeds. The caller is responsible for dismissing this
+    /// camera screen (e.g. `showVerification = false`) *before* clearing the alarm, so the
+    /// two nested full-screen covers don't race each other on dismissal.
+    let onVerified: () -> Void
     @EnvironmentObject var appState: AppState
     @StateObject private var viewModel: PrayerMatVerificationViewModel
 
-    init(alarm: ActivePrayerAlarm, appState: AppState) {
+    init(alarm: ActivePrayerAlarm, appState: AppState, onVerified: @escaping () -> Void) {
         self.alarm = alarm
+        self.onVerified = onVerified
         _viewModel = StateObject(wrappedValue: PrayerMatVerificationViewModel(
             cameraService: appState.cameraService,
             recognitionService: appState.recognitionService,
@@ -65,7 +70,7 @@ struct PrayerMatCameraView: View {
                         let success = await viewModel.captureAndVerify()
                         if success {
                             try? await Task.sleep(nanoseconds: 900_000_000)
-                            appState.markPrayerCompleted()
+                            onVerified()
                         }
                     }
                 } label: {

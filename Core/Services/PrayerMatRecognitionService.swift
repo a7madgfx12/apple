@@ -20,7 +20,6 @@ struct MatRecognitionResult {
 /// photos. This is the strongest fully-on-device, Apple-API-only approach without a
 /// custom-trained model; it is not claimed to be 100% accurate — see confidenceThreshold.
 final class PrayerMatRecognitionService {
-    private let confidenceThreshold: Double = 0.35
     private let matRelatedLabels: Set<String> = [
         "rug", "carpet", "mat", "doormat", "prayer rug", "prayer mat", "runner rug",
         "floor", "flooring", "textile", "fabric", "pattern", "tapestry"
@@ -45,16 +44,30 @@ final class PrayerMatRecognitionService {
         do {
             let (matScore, rejectScore) = try await classify(cgImage: cgImage)
             let passesHeuristics = hasSufficientFloorCoverage(cgImage)
-            let confidence = matScore * (passesHeuristics ? 1.0 : 0.5)
 
-            if rejectScore > matScore + 0.15 {
+            // Vision's general-purpose scene classifier does not reliably carry a
+            // dedicated "prayer mat" label in Apple's closed taxonomy, so matScore alone
+            // is too unreliable to *require* — treating it as a strict gate made this
+            // reject genuine photos of a real prayer mat almost every time. Instead:
+            // reject only on a *confident* negative signal (a person, screen, furniture,
+            // etc. clearly dominating the frame) or failed image-quality heuristics;
+            // otherwise accept, using matScore only to boost confidence when present.
+            let confidence = max(matScore, passesHeuristics ? 0.5 : 0.2)
+
+            if rejectScore > 0.55 && rejectScore > matScore + 0.2 {
                 return MatRecognitionResult(isVerified: false, confidence: confidence, reasonIfRejected: "لم نتمكن من التحقق من سجادة الصلاة")
             }
-            if confidence >= confidenceThreshold && passesHeuristics {
-                return MatRecognitionResult(isVerified: true, confidence: confidence, reasonIfRejected: nil)
+            guard passesHeuristics else {
+                return MatRecognitionResult(isVerified: false, confidence: confidence, reasonIfRejected: "لم نتمكن من التحقق من سجادة الصلاة")
             }
-            return MatRecognitionResult(isVerified: false, confidence: confidence, reasonIfRejected: "لم نتمكن من التحقق من سجادة الصلاة")
+            return MatRecognitionResult(isVerified: true, confidence: confidence, reasonIfRejected: nil)
         } catch {
+            // If Vision itself fails (e.g. unsupported device), fall back to the
+            // deterministic quality/coverage heuristics alone rather than always rejecting.
+            let passesHeuristics = hasSufficientFloorCoverage(cgImage)
+            if passesHeuristics {
+                return MatRecognitionResult(isVerified: true, confidence: 0.4, reasonIfRejected: nil)
+            }
             return MatRecognitionResult(isVerified: false, confidence: 0, reasonIfRejected: "لم نتمكن من التحقق من سجادة الصلاة")
         }
     }

@@ -52,7 +52,15 @@ struct PrayerAlarmView: View {
         }
         .interactiveDismissDisabled(true)
         .fullScreenCover(isPresented: $showVerification) {
-            PrayerMatCameraView(alarm: alarm, appState: appState)
+            PrayerMatCameraView(alarm: alarm, appState: appState) {
+                // Dismiss this inner camera sheet first, then clear the alarm (which
+                // dismisses the outer alarm screen) — avoids the two nested full-screen
+                // covers racing each other and appearing to "bounce back" to the camera.
+                showVerification = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    appState.markPrayerCompleted()
+                }
+            }
         }
         .environment(\.layoutDirection, .rightToLeft)
     }

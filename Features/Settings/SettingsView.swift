@@ -16,6 +16,7 @@ struct SettingsView: View {
                     audioSection
                     calculationSection
                     verificationSection
+                    testSection
                 }
                 .scrollContentBackground(.hidden)
             }
@@ -68,6 +69,24 @@ struct SettingsView: View {
                 Slider(value: $settings.volume, in: 0...1)
                     .tint(AppTheme.primaryYellow)
             }
+        }
+        .listRowBackground(AppTheme.secondaryBlack)
+    }
+
+    private var testSection: some View {
+        Section("اختبار") {
+            VStack(alignment: .trailing, spacing: 6) {
+                Text("اختبار التنبيه الكامل")
+                    .foregroundStyle(.white)
+                Text("يشغّل الصوت المختار فورًا ويفتح شاشة التنبيه وتدفق الكاميرا، بالضبط كما يحدث وقت الصلاة الفعلي — لتجربة الصوت والتحقق دون الانتظار.")
+                    .font(.caption)
+                    .foregroundStyle(AppTheme.secondaryText)
+                    .multilineTextAlignment(.trailing)
+            }
+            Button("بدء اختبار التنبيه") {
+                appState.triggerTestAlarm()
+            }
+            .foregroundStyle(AppTheme.primaryYellow)
         }
         .listRowBackground(AppTheme.secondaryBlack)
     }
