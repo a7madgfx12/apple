@@ -145,7 +145,7 @@ private struct Sun {
             let (decl, _) = position(dayFraction: t)
             let noon = midDay(dayFraction: t)
             let angle = -arccotDeg(shadowFactor + tanDeg(abs(latitude - decl)))
-            let numerator = sinDeg(angle) - sinDeg(decl) * sinDeg(latitude)
+            let numerator = -sinDeg(angle) - sinDeg(decl) * sinDeg(latitude)
             let denominator = cosDeg(decl) * cosDeg(latitude)
             guard denominator != 0 else { break }
             let hourAngle = arccosDeg(numerator / denominator) / 15.0
