@@ -3,11 +3,13 @@ import Foundation
 enum QuranError: LocalizedError {
     case indexUnavailable
     case networkUnavailableAndNotCached
+    case pagesNotSupportedBySource
 
     var errorDescription: String? {
         switch self {
         case .indexUnavailable: return "تعذر تحميل فهرس السور."
-        case .networkUnavailableAndNotCached: return "هذه الصفحة غير متاحة بدون اتصال بالإنترنت بعد. يرجى الاتصال بالإنترنت مرة واحدة لتنزيلها."
+        case .networkUnavailableAndNotCached: return "هذه السورة غير متاحة بدون اتصال بالإنترنت بعد. يرجى الاتصال بالإنترنت مرة واحدة لتنزيلها."
+        case .pagesNotSupportedBySource: return "قراءة صفحات المصحف الفردية غير متاحة حاليًا من مصدر المحتوى المعتمد. يرجى استخدام فهرس السور بدلًا من ذلك."
         }
     }
 }
@@ -17,10 +19,15 @@ enum QuranError: LocalizedError {
 /// Architecture: the 114-Surah index (number, Arabic name, ayah count) is bundled locally
 /// as static metadata (Resources/Quran/surah_index.json) — this is standard, unchanging
 /// Mushaf metadata, not Quran *text*, so it is safe to ship offline. The actual Quran
-/// *text* (surah/page content) is fetched from the source on first access and cached to
+/// *text* (surah content) is fetched from the source on first access and cached to
 /// disk (Application Support/Quran/) so subsequent reads — including offline reads — use
 /// the cached copy, satisfying the "offline after installation" requirement without
 /// requiring us to hand-transcribe 6,236 ayahs into this repository.
+///
+/// Known source limitation: surahquran.com does not expose a per-Mushaf-page reading
+/// endpoint (its `/page/N.html` URLs are tafsir pages indexed by *surah* number, not
+/// Mushaf page). The Page Index screen therefore surfaces `QuranError.pagesNotSupportedBySource`
+/// rather than silently showing an empty page — see README for this documented limitation.
 final class QuranService {
     private let session: URLSession
     private let cacheDirectory: URL
@@ -51,66 +58,73 @@ final class QuranService {
     /// caching to disk. Falls back to the disk cache when offline.
     func ayahs(forSurah surahNumber: Int) async throws -> [Ayah] {
         let cacheFile = cacheDirectory.appendingPathComponent("surah_\(surahNumber).json")
-        if let cached = try? Data(contentsOf: cacheFile), let ayahs = try? JSONDecoder().decode([Ayah].self, from: cached) {
+        if let cached = try? Data(contentsOf: cacheFile), let ayahs = try? JSONDecoder().decode([Ayah].self, from: cached), !ayahs.isEmpty {
             return ayahs
         }
-        guard let ayahs = try? await fetchSurahFromSource(surahNumber) else {
-            throw QuranError.networkUnavailableAndNotCached
-        }
+        let ayahs = try await fetchSurahFromSource(surahNumber)
+        guard !ayahs.isEmpty else { throw QuranError.networkUnavailableAndNotCached }
         if let encoded = try? JSONEncoder().encode(ayahs) {
             try? encoded.write(to: cacheFile)
         }
         return ayahs
     }
 
-    /// Returns the ayahs belonging to a given standard Mushaf page (1...604), used by the
-    /// page-index reader. Cached the same way as `ayahs(forSurah:)`.
+    /// surahquran.com has no per-Mushaf-page endpoint — see type-level documentation.
     func ayahs(forPage pageNumber: Int) async throws -> [Ayah] {
-        let cacheFile = cacheDirectory.appendingPathComponent("page_\(pageNumber).json")
-        if let cached = try? Data(contentsOf: cacheFile), let ayahs = try? JSONDecoder().decode([Ayah].self, from: cached) {
-            return ayahs
-        }
-        guard let ayahs = try? await fetchPageFromSource(pageNumber) else {
-            throw QuranError.networkUnavailableAndNotCached
-        }
-        if let encoded = try? JSONEncoder().encode(ayahs) {
-            try? encoded.write(to: cacheFile)
-        }
-        return ayahs
+        throw QuranError.pagesNotSupportedBySource
     }
 
     // MARK: - Source fetching (surahquran.com)
 
     private func fetchSurahFromSource(_ surahNumber: Int) async throws -> [Ayah] {
-        // surahquran.com exposes a per-surah reading page; we parse its ayah markup.
-        let url = sourceBaseURL.appendingPathComponent("\(surahNumber)")
+        let url = sourceBaseURL.appendingPathComponent("\(surahNumber).html")
         let (data, _) = try await session.data(from: url)
         return try QuranHTMLParser.parseAyahs(html: data, surahNumber: surahNumber)
     }
-
-    private func fetchPageFromSource(_ pageNumber: Int) async throws -> [Ayah] {
-        let url = sourceBaseURL.appendingPathComponent("page").appendingPathComponent("\(pageNumber)")
-        let (data, _) = try await session.data(from: url)
-        return try QuranHTMLParser.parseAyahs(html: data, surahNumber: nil)
-    }
 }
 
-/// Minimal HTML scraper for surahquran.com's ayah markup. Kept isolated so the parsing
-/// strategy can be adjusted independently of caching/networking if the source markup changes.
+/// HTML scraper for surahquran.com's ayah markup, verified against the site's actual output.
+///
+/// Ayah text on a surah page (e.g. surahquran.com/1.html) is rendered as plain text inside a
+/// single container `<div>`, interspersed with `<b>` tags (bold emphasis on some words — not
+/// semantically meaningful) and `<br>` line breaks, with each ayah terminated by a
+/// `<label>(N)</label>` marker containing its ayah number. There is no `data-ayah` attribute
+/// or per-ayah wrapper element. This parser locates the region starting at
+/// `id="reading"` and extracts the text preceding each `<label>(N)</label>` marker as that
+/// ayah's content.
 enum QuranHTMLParser {
     static func parseAyahs(html data: Data, surahNumber: Int?) throws -> [Ayah] {
         guard let html = String(data: data, encoding: .utf8) else { return [] }
+
+        guard let readingMarkerRange = html.range(of: "id=\"reading\"") else { return [] }
+        var region = String(html[readingMarkerRange.upperBound...])
+        if let endRange = region.range(of: "id=\"surah\"") ?? region.range(of: "id=\"mp3\"") {
+            region = String(region[..<endRange.lowerBound])
+        }
+
+        guard let labelRegex = try? NSRegularExpression(pattern: #"<label>\((\d+)\)</label>"#) else { return [] }
+        let nsRegion = region as NSString
+        let matches = labelRegex.matches(in: region, range: NSRange(location: 0, length: nsRegion.length))
+
         var results: [Ayah] = []
-        // Ayah spans on surahquran.com are wrapped as: <span class="ayah" data-ayah="N">TEXT</span>
-        let pattern = #"data-ayah="(\d+)"[^>]*>([^<]+)<"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
-        let nsRange = NSRange(html.startIndex..<html.endIndex, in: html)
-        regex.enumerateMatches(in: html, range: nsRange) { match, _, _ in
-            guard let match, let ayahRange = Range(match.range(at: 1), in: html), let textRange = Range(match.range(at: 2), in: html) else { return }
-            guard let ayahNum = Int(html[ayahRange]) else { return }
-            let text = html[textRange].trimmingCharacters(in: .whitespacesAndNewlines)
-            results.append(Ayah(surahNumber: surahNumber ?? 0, ayahNumber: ayahNum, text: text))
+        var cursor = 0
+        for match in matches {
+            guard let numberRange = Range(match.range(at: 1), in: region) else { continue }
+            let ayahNumber = Int(region[numberRange]) ?? 0
+            let rawSegment = nsRegion.substring(with: NSRange(location: cursor, length: match.range.location - cursor))
+            let text = stripTags(rawSegment)
+            if !text.isEmpty {
+                results.append(Ayah(surahNumber: surahNumber ?? 0, ayahNumber: ayahNumber, text: text))
+            }
+            cursor = match.range.location + match.range.length
         }
         return results
+    }
+
+    private static func stripTags(_ segment: String) -> String {
+        var result = segment.replacingOccurrences(of: "<br>", with: " ")
+        result = result.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
