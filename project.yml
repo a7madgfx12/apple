@@ -25,12 +25,13 @@ targets:
       - path: Features
       - path: Resources
         buildPhase: resources
-    info:
-      path: App/Info.plist
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1"
         GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: App/Info.plist
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "نحتاج إلى موقعك لحساب مواقيت الصلاة الخاصة بمنطقتك بدقة. لن يُستخدم موقعك لأي غرض آخر."
+        INFOPLIST_KEY_NSCameraUsageDescription: "نستخدم الكاميرا للتحقق من أنك قمت للصلاة عبر تصوير سجادة الصلاة، معالجة الصورة تتم بالكامل على جهازك ولا يتم رفعها لأي خادم."
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
     capabilities:
